@@ -1,0 +1,36 @@
+name: Lean proof report
+description: Record pinned Lean Comparator checks with source hashes and execution receipts
+author: Leon Acosta
+inputs:
+  project:
+    description: Proof project directory
+    required: true
+  policy-sha256:
+    description: SHA-256 of the maintainer-approved proof-policy.json
+    required: true
+  output:
+    description: New output directory outside the proof project
+    required: true
+  toolchain-bin:
+    description: Trusted Lean 4.36.0 bin directory
+    default: /opt/lean/bin
+  timeout:
+    description: Comparator timeout in seconds
+    default: '600'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PROOF_PROJECT: ${{ inputs.project }}
+        PROOF_POLICY_SHA: ${{ inputs.policy-sha256 }}
+        PROOF_OUTPUT: ${{ inputs.output }}
+        PROOF_BIN: ${{ inputs.toolchain-bin }}
+        PROOF_TIMEOUT: ${{ inputs.timeout }}
+      run: >-
+        python3 "$GITHUB_ACTION_PATH/report.py"
+        --project "$PROOF_PROJECT"
+        --policy-sha256 "$PROOF_POLICY_SHA"
+        --output "$PROOF_OUTPUT"
+        --toolchain-bin "$PROOF_BIN"
+        --timeout "$PROOF_TIMEOUT"
