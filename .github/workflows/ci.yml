@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +54,12 @@ jobs:
         run: |
           for dir in "$RUNNER_TEMP"/proof-reports/*; do
             (cd "$dir" && sha256sum --check SHA256SUMS)
+          done
+      - name: Show checker logs
+        if: always()
+        run: |
+          for log in "$RUNNER_TEMP"/proof-reports/*/comparator.log; do
+            cat "$log"
           done
       - uses: actions/upload-artifact@v4
         if: always()
