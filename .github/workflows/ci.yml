@@ -1,0 +1,63 @@
+name: Proof report tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest -v test_report.py
+      - name: Install pinned Lean and sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap zstd
+          curl --fail --location --retry 3 https://github.com/leanprover/lean4/releases/download/v4.36.0/lean-4.36.0-linux.tar.zst -o "$RUNNER_TEMP/lean.tar.zst"
+          echo "2b7ab1ed8b92d2e6abfaf41344823b510064dbc9c0260cac73eb496ab2dea6eb  $RUNNER_TEMP/lean.tar.zst" | sha256sum --check
+          mkdir "$RUNNER_TEMP/lean"
+          tar --zstd -xf "$RUNNER_TEMP/lean.tar.zst" --strip-components=1 -C "$RUNNER_TEMP/lean"
+          ls "$RUNNER_TEMP/lean/bin"
+      - name: Prepare valid fixture
+        id: fixture
+        run: |
+          digest=$(python3 fixtures.py "$RUNNER_TEMP/proof-valid" valid)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify valid proof through the action
+        uses: ./
+        with:
+          project: ${{ runner.temp }}/proof-valid
+          policy-sha256: ${{ steps.fixture.outputs.digest }}
+          output: ${{ runner.temp }}/proof-reports/valid
+          toolchain-bin: ${{ runner.temp }}/lean/bin
+      - name: Verify negative cases
+        env:
+          LEAN_BIN: ${{ runner.temp }}/lean/bin
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          from fixtures import create
+          root=Path(os.environ['RUNNER_TEMP'])
+          for case in ['mismatch','sorry','axiom']:
+              project=root/('proof-'+case)
+              digest=create(project,case)
+              output=root/'proof-reports'/case
+              result=subprocess.run([sys.executable,'report.py','--project',str(project),'--policy-sha256',digest,'--output',str(output),'--toolchain-bin',os.environ['LEAN_BIN']])
+              report=json.loads((output/'report.json').read_text())
+              assert result.returncode == 1 and report['status']=='failed', (case,report)
+              print(case+': correctly failed')
+          PY
+      - name: Verify receipt manifests
+        run: |
+          for dir in "$RUNNER_TEMP"/proof-reports/*; do
+            (cd "$dir" && sha256sum --check SHA256SUMS)
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: proof-reports
+          path: ${{ runner.temp }}/proof-reports/
+          retention-days: 30
